@@ -1,0 +1,5 @@
+PySide6>=6.8,<7
+cryptography>=44
+openai>=1.90,<4
+anthropic>=0.54,<3
+google-genai>=1.40,<4
