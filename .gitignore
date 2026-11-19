@@ -1,0 +1,17 @@
+*.zip
+deepseek_data*
+user.json
+*.db
+*.db-*
+*.sqlite*
+config.json
+*.tmp
+.env
+.env.*
+.venv/
+__pycache__/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+ds-context-*/
