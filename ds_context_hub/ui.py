@@ -11,7 +11,7 @@ from cryptography.exceptions import InvalidTag
 from PySide6.QtCore import Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout,
+    QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHeaderView,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QMainWindow,
     QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSplitter,
     QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
@@ -47,6 +47,11 @@ QTreeWidget::item, QListWidget::item { padding: 5px; }
 QTreeWidget::item:selected, QListWidget::item:selected { background: #354b65; }
 QHeaderView::section { background: #292a2d; padding: 7px; border: 0; }
 QSplitter::handle { width: 8px; }
+QScrollBar:vertical { background: #27282b; width: 10px; }
+QScrollBar:horizontal { background: #27282b; height: 10px; }
+QScrollBar::handle { background: #53575e; border-radius: 4px; min-height: 22px; min-width: 22px; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 QProgressBar { border: 1px solid #3c4043; border-radius: 5px; text-align: center; }
 QProgressBar::chunk { background: #315783; border-radius: 4px; }
 """
@@ -265,6 +270,7 @@ class Window(QMainWindow):
         layout.addLayout(toolbar)
 
         splitter = QSplitter()
+        splitter.setHandleWidth(12)
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -274,7 +280,11 @@ class Window(QMainWindow):
         left_layout.addWidget(self.search)
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["会话标题", "消息"])
-        self.tree.setColumnWidth(0, 245)
+        header = self.tree.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.tree.setRootIsDecorated(False)
         self.tree.setUniformRowHeights(True)
         self.tree.currentItemChanged.connect(self.preview_item)
         self.tree.itemChanged.connect(self.selection_changed)
