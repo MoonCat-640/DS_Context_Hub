@@ -1,7 +1,7 @@
 """Asynchronous text generation through the selected provider's API."""
 
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 from anthropic import AsyncAnthropic
@@ -21,10 +21,15 @@ class Provider:
 PROVIDERS = {
     "DeepSeek": Provider("deepseek-flash", "https://api.deepseek.com"),
     "ChatGPT / OpenAI": Provider("gpt-6-luna", "https://api.openai.com/v1"),
-    "Qwen / 通义千问": Provider("qwen-turbo", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+    "Qwen / 通义千问": Provider("qwen-flash", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
     "文心一言 / 百度千帆": Provider("ernie-lite-8k", "https://qianfan.baidubce.com/v2", 4400, 1800),
     "Gemini": Provider("gemini-3.1-flash-lite"),
     "Claude": Provider("claude-haiku-5-5"),
+}
+
+PREFERRED_MODELS = {
+    "ChatGPT / OpenAI": "gpt-5-nano",
+    "Gemini": "gemini-2.5-flash-lite",
 }
 
 
@@ -61,11 +66,12 @@ async def generator(provider: Provider, key: str):
         ) as client:
             async def generate(system: str, prompt: str, limit: int) -> str:
                 options = {"max_tokens": limit}
-                if provider.model == "gpt-6-luna":
-                    options = {"max_completion_tokens": limit, "reasoning_effort": "none"}
+                if provider.model in {"gpt-5-nano", "gpt-6-luna"}:
+                    effort = "minimal" if provider.model == "gpt-5-nano" else "none"
+                    options = {"max_completion_tokens": limit, "reasoning_effort": effort}
                 if provider.model == "deepseek-flash":
                     options["extra_body"] = {"thinking": {"type": "disabled"}}
-                if provider.model == "qwen-turbo":
+                if provider.model == "qwen-flash":
                     options["extra_body"] = {"enable_thinking": False}
                 result = await client.chat.completions.create(
                     model=provider.model,
@@ -78,13 +84,18 @@ async def generator(provider: Provider, key: str):
 
             yield generate
     elif provider.model.startswith("gemini-"):
-        async with genai.Client(api_key=key, http_options=types.HttpOptions(timeout=120000)).aio as client:
+        http = types.HttpOptions(base_url="https://generativelanguage.googleapis.com", timeout=120000)
+        async with genai.Client(api_key=key, vertexai=False, http_options=http).aio as client:
             async def generate(system: str, prompt: str, limit: int) -> str:
+                thinking = (
+                    types.ThinkingConfig(thinking_budget=0) if provider.model == "gemini-2.5-flash-lite"
+                    else types.ThinkingConfig(thinking_level="MINIMAL")
+                )
                 result = await client.models.generate_content(
                     model=provider.model, contents=prompt,
                     config=types.GenerateContentConfig(
                         system_instruction=system, max_output_tokens=limit,
-                        thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
+                        thinking_config=thinking,
                     ),
                 )
                 if not result.candidates or result.candidates[0].finish_reason not in ("STOP", None):
@@ -93,7 +104,9 @@ async def generator(provider: Provider, key: str):
 
             yield generate
     else:
-        async with AsyncAnthropic(api_key=key, timeout=120.0, max_retries=0) as client:
+        async with AsyncAnthropic(
+            api_key=key, base_url="https://api.anthropic.com", timeout=120.0, max_retries=0,
+        ) as client:
             async def generate(system: str, prompt: str, limit: int) -> str:
                 result = await client.messages.create(
                     model=provider.model, max_tokens=limit, system=system,
@@ -112,9 +125,22 @@ def _require_text(text: str | None) -> str:
     return text.strip()
 
 
-async def validate_key(provider: Provider, key: str):
-    async with generator(provider, key) as generate:
-        await generate("Reply with exactly OK.", "Check", 64)
+async def validate_key(platform: str, key: str) -> Provider:
+    default = PROVIDERS[platform]
+    preferred = PREFERRED_MODELS.get(platform)
+    if preferred:
+        candidate = replace(default, model=preferred)
+        try:
+            async with generator(candidate, key) as generate:
+                await generate("Reply with exactly OK.", "Check", 128)
+            return candidate
+        except Exception as error:
+            code = getattr(error, "status_code", None) or getattr(error, "code", None)
+            if code not in (403, 404):
+                raise
+    async with generator(default, key) as generate:
+        await generate("Reply with exactly OK.", "Check", 128)
+    return default
 
 
 def estimate_tokens(text: str) -> int:

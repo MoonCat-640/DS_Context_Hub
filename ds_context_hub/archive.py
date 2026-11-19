@@ -5,7 +5,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from zipfile import ZipFile
+from zipfile import BadZipFile, ZipFile
 
 MAX_JSON_BYTES = 64 * 1024 * 1024
 FENCE = re.compile(
@@ -147,6 +147,6 @@ def read_archive(path: Path) -> tuple[list[Conversation], int]:
                 title = " ".join(str(entry.get("title") or data.get("title") or "未命名会话").split())
                 session = _conversation(data, title)
                 conversations.append(session)
-            except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
+            except (BadZipFile, ValueError, TypeError, KeyError, AttributeError, OverflowError, RuntimeError):
                 skipped += 1
         return conversations, skipped
