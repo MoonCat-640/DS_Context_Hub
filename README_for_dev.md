@@ -70,3 +70,12 @@ Prompt 示例：“你是一个技术档案管理员。请将以下对话总结�
 
 
 
+**【补充开发要求】：**
+
+1. **UI 框架选择**：建议使用 `Python + CustomTkinter` 或 `PyQt6`，确保暗色主题、标签页和高分辨率的实现最平滑。不要用过于简陋的默认 tkinter。
+2. **API 接入策略**：请使用统一的 OpenAI 兼容接口（`openai` Python 库）来对接大部分 LLM。对于 Google 等特殊接口，使用其官方库。请把 API 请求封装成异步（`asyncio` / `aiohttp`），防止 UI 界面在压缩长上下文时卡死。
+3. **密码学安全**：对于 API Key 的本地存储，请使用 Python 的 `cryptography` 库。首次启动生成一个随机 Salt，用 PBKDF2（十万次迭代以上）派生密钥，用 AES-GCM 加密后存入本地 SQLite 或配置文件，**绝不可明文存储**。
+4. **正则清洗优先**：在调用 LLM 前，先用 Python 写一套清洗规则：过滤 `TEMPLATE_RESPONSE`、去掉系统底层的插件调用代码块（如 ````json` 内的工具调用）、合并连续的空行。
+5. **Token 预估**：在调用 LLM 压缩前，先用 `tiktoken` 库（或简单的字符估算）预估一下清洗后的 Token 量。如果太长，先分块总结再合并总结，防止直接超出模型的上下文限制。
+6. **Git 自动化**：开发过程中，每完成一个大模块（如解析器、UI、LLM 接入），自动执行 `git add`、`git commit -m "feat: xxx"` 和 `git push`，确保留档。
+7. **隐私保护**：务必在 `.gitignore` 中加入 `*.zip`、`deepseek_data*`、`*.db`、`config.json` 等敏感文件，并在读取 JSON 时**直接跳过并忽略 `user.json`**。
