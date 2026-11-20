@@ -1,0 +1,57 @@
+name: Verify Windows installer
+run-name: Verify Windows installer ${{ inputs.tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag containing Setup.exe
+        required: true
+        type: string
+      sha256:
+        description: Expected SHA-256 of Setup.exe
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Download and verify the release installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          SETUP_SHA256: ${{ inputs.sha256 }}
+        run: |
+          if ($env:RELEASE_TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$' -or $env:SETUP_SHA256 -notmatch '^[0-9a-f]{64}$') {
+            throw 'Expected a version tag and a SHA-256 digest'
+          }
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern Setup.exe --dir release
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download the release installer' }
+          $digest = (Get-FileHash -LiteralPath 'release\Setup.exe' -Algorithm SHA256).Hash
+          if ($digest -ne $env:SETUP_SHA256) { throw "Unexpected installer digest $digest" }
+          Write-Host "Verified Setup.exe SHA-256 $digest"
+
+      - name: Exercise both installation scopes and launch via the Start menu shortcut
+        shell: pwsh
+        run: .\packaging\verify_install.ps1
+
+      - name: Show installation and application test results
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath 'build\install-verification') {
+            Get-ChildItem -LiteralPath 'build\install-verification' -Filter '*.json' -File | ForEach-Object {
+              Write-Host $_.Name
+              Get-Content -Raw -LiteralPath $_.FullName
+            }
+          }
