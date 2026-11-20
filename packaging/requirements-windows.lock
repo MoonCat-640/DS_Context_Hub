@@ -1,3 +1,4 @@
+# Windows 发行构建使用的精确版本，包含运行依赖、间接依赖及 PyInstaller 工具链。
 altgraph==0.17.5
 annotated-types==0.8.0
 anthropic==2.10.0

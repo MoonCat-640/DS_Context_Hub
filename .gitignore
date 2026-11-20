@@ -1,3 +1,4 @@
+# DeepSeek 导出、账号信息和密钥库只存在本机。
 *.zip
 deepseek_data*
 user.json
@@ -8,6 +9,7 @@ config.json
 *.tmp
 .env
 .env.*
+# 开发环境、冻结目录和发行文件单独生成。
 .venv/
 .build-venv/
 __pycache__/
@@ -16,4 +18,5 @@ dist/
 build/
 release/
 *.egg-info/
+# 每批实际导出的简报可能含有聊天正文。
 ds-context-*/

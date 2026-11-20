@@ -1,3 +1,4 @@
+; NSIS 把程序文件、语言资源和 PATH 助手放入同一个离线安装包。
 Unicode true
 ManifestDPIAware true
 !include "MUI2.nsh"
@@ -9,6 +10,7 @@ ManifestDPIAware true
 !define APP_NAME "DS Context Hub"
 !define APP_KEY "Software\MoonCat-640\DS Context Hub"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\DSContextHub"
+; Admin 决定 UAC 提权。用户随后选择的安装范围决定 SHCTX 指向 HKCU 还是 HKLM。
 !define MULTIUSER_EXECUTIONLEVEL Admin
 !define MULTIUSER_MUI
 !define MULTIUSER_INSTALLMODE_COMMANDLINE
@@ -36,6 +38,7 @@ VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright (c) 2026 MoonCat-640"
 !define MUI_LANGDLL_REGISTRY_ROOT "SHCTX"
 !define MUI_LANGDLL_REGISTRY_KEY "${APP_KEY}"
 !define MUI_LANGDLL_REGISTRY_VALUENAME "InstallerLanguage"
+; 此处的页面顺序对应用户看到的向导。目录检查同时也在静默安装入口执行。
 !insertmacro MUI_RESERVEFILE_LANGDLL
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "${PROJECT_ROOT}\LICENSE"
@@ -78,8 +81,7 @@ Var OriginalUninstallDir
 Var InitialDir
 
 Function ValidateDirectory
-  ; NSIS GetFullPathName requires an existing directory. The Win32 API also
-  ; normalizes a path the user is about to create.
+  ; 首次安装时目录可能尚不存在。Win32 的 GetFullPathNameW 仍可规范化该路径，返回值是字符数。
   Push "$INSTDIR"
   System::Call 'kernel32::GetFullPathNameW(w s, i ${NSIS_MAX_STRLEN}, w .r1, p 0)i.r0'
   ${If} $0 == 0
@@ -89,6 +91,7 @@ Function ValidateDirectory
     Abort
   ${EndIf}
   StrCpy $INSTDIR "$1"
+  ; 防止把驱动器根目录、系统目录或整个 Program Files 当成本应用的目录。
   ${GetRoot} "$INSTDIR" $0
   ${If} $INSTDIR == $0
   ${OrIf} $INSTDIR == "$0\"
@@ -100,6 +103,7 @@ Function ValidateDirectory
     Abort
   ${EndIf}
   ReadINIStr $0 "$INSTDIR\install.ini" "Installation" "Mode"
+  ; 磁盘标记防止两种范围共用同一目录，注册表位置则用于识别同一范围的重装。
   ${If} $0 != ""
   ${AndIf} $0 != $MultiUser.InstallMode
     MessageBox MB_OK|MB_ICONSTOP "$(InvalidDirectory)" /SD IDOK
@@ -114,6 +118,7 @@ Function ValidateDirectory
     Abort
   ${EndIf}
   ${If} $0 != $INSTDIR
+    ; 首次安装只接收新目录或空目录，避免覆盖用户原有的文件。
     FindFirst $0 $1 "$INSTDIR\*"
     ${DoWhile} $1 != ""
       ${If} $1 != "."
@@ -136,6 +141,7 @@ FunctionEnd
 
 !macro ApplicationClosed PREFIX
 Function ${PREFIX}CheckApplicationClosed
+  ; 尝试取得 exe 的写入句柄。Windows 正在运行它时会拒绝，安装与卸载都能据此暂停。
   IfFileExists "$INSTDIR\ds_context_hub.exe" 0 done
   ClearErrors
   FileOpen $0 "$INSTDIR\ds_context_hub.exe" a
@@ -152,6 +158,7 @@ FunctionEnd
 !insertmacro ApplicationClosed "un."
 
 Section "$(CoreSection)" Core
+  ; 必选组件记录安装范围、注册 Windows 卸载入口，并按构建时生成的清单复制文件。
   SectionIn RO
   Call ValidateDirectory
   SetOutPath "$INSTDIR"
@@ -172,6 +179,7 @@ Section "$(CoreSection)" Core
   WriteRegDWORD SHCTX "${UNINSTALL_KEY}" "NoRepair" 1
   WriteRegDWORD SHCTX "${UNINSTALL_KEY}" "EstimatedSize" ${INSTALLED_KB}
   !include "${GENERATED_DIR}\payload-install.nsh"
+  ; 上一条 File 指令可能位于某个子目录。复位后，快捷方式的工作目录就是程序根目录。
   SetOutPath "$INSTDIR"
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
   CreateShortcut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\ds_context_hub.exe"
@@ -179,11 +187,13 @@ Section "$(CoreSection)" Core
 SectionEnd
 
 Section "$(DesktopSection)" Desktop
+  ; 记录此选项，卸载时据此决定是否清理桌面快捷方式。
   CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\ds_context_hub.exe"
   WriteRegDWORD SHCTX "${APP_KEY}" "DesktopShortcut" 1
 SectionEnd
 
 !macro ManagePath ACTION
+  ; 从安装器自身解出助手并等它完成，成功后广播环境变化，供后续打开的程序使用新值。
   InitPluginsDir
   File "/oname=$PLUGINSDIR\PathEntry.exe" "${GENERATED_DIR}\PathEntry.exe"
   ClearErrors
@@ -197,6 +207,7 @@ SectionEnd
 !macroend
 
 Section /o "$(PathSection)" AddPath
+  ; /o 表示默认不选。向导中的复选项和静默安装的 /AddToPath 都会选中此节。
   !insertmacro ManagePath add
   ${If} $0 != 0
     MessageBox MB_OK|MB_ICONEXCLAMATION "$(PathFailure)" /SD IDOK
@@ -206,6 +217,7 @@ SectionEnd
 
 Function .onInit
   SetRegView 64
+  ; MultiUser 会根据范围计算默认目录，先保存调用者通过 /D= 指定的位置。
   StrCpy $InitialDir "$INSTDIR"
   !insertmacro MULTIUSER_INIT
   ${If} $InitialDir != ""
@@ -228,6 +240,7 @@ FunctionEnd
 
 Function un.onInit
   SetRegView 64
+  ; 从卸载器所在目录的标记恢复安装范围，再与该范围的注册表路径核对。
   StrCpy $OriginalUninstallDir "$INSTDIR"
   !insertmacro MULTIUSER_UNINIT
   ReadINIStr $0 "$OriginalUninstallDir\install.ini" "Installation" "Mode"
@@ -252,6 +265,7 @@ FunctionEnd
 
 Section "Uninstall"
   Call un.CheckApplicationClosed
+  ; 先清理安装器曾添加的 PATH。若清理失败，保留注册信息和文件供用户重试。
   ReadRegStr $1 SHCTX "${APP_KEY}" "PathEntry"
   ${If} $1 != ""
     !insertmacro ManagePath remove
@@ -261,6 +275,7 @@ Section "Uninstall"
       Abort
     ${EndIf}
   ${EndIf}
+  ; 清单逐个删除发行版文件，RMDir 只会移除空目录，用户后来加入的文件可保留。
   !include "${GENERATED_DIR}\payload-uninstall.nsh"
   Delete "$INSTDIR\install.ini"
   Delete "$INSTDIR\Uninstall.exe"

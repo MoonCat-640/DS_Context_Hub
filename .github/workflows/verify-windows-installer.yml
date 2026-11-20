@@ -1,4 +1,5 @@
 name: Verify Windows installer
+# build 验证当前源码生成的安装包，release 按标签下载发行文件，二者共用同一套安装测试。
 run-name: Verify Windows installer ${{ inputs.source }} ${{ inputs.tag }}
 
 on:
@@ -22,6 +23,7 @@ on:
         type: string
 
 permissions:
+  # 作业只需读取仓库和已公开的发行文件。
   contents: read
 
 jobs:
@@ -38,6 +40,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # 固定编译器版本并核对下载散列，Python 依赖使用仓库中的锁定清单。
           New-Item -ItemType Directory -Path build/tools -Force | Out-Null
           curl.exe --fail --location --retry 3 --max-time 120 --output build/tools/nsis.zip 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip'
           if ($LASTEXITCODE -ne 0) { throw 'Could not download the NSIS compiler' }
@@ -72,6 +75,7 @@ jobs:
         run: .\packaging\verify_install.ps1
 
       - name: Retain tested release files
+        # 仅保留通过两种安装范围测试的构建产物，方便发布相同的文件。
         if: success() && inputs.source == 'build'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

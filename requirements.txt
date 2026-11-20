@@ -1,5 +1,7 @@
+# 源码运行所需依赖。Qt Essentials 提供桌面界面，cryptography 提供密钥派生和加密。
 PySide6-Essentials>=6.8,<6.10
 cryptography>=44
+# OpenAI 兼容的平台共用 openai 客户端，Claude 和 Gemini 分别使用各自的 SDK。
 openai>=1.90,<4
 anthropic>=0.54,<3
 google-genai>=1.40,<4

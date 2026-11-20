@@ -1,4 +1,4 @@
-"""Windows-friendly Qt desktop workflow."""
+"""Qt 桌面界面。主线程维护会话选择和窗口状态，后台线程负责读包、模型调用与导出。"""
 
 import asyncio
 import sqlite3
@@ -25,6 +25,7 @@ from .providers import (
 )
 
 
+# 命名控件使用 #primary、#heading 等选择器，多个页面共用同一套 Qt 样式。
 STYLE = """
 QWidget { background: #202124; color: #e8eaed; }
 QLabel#heading { font-size: 26px; font-weight: 600; }
@@ -58,6 +59,7 @@ QProgressBar::chunk { background: #315783; border-radius: 4px; }
 
 
 def label(text, name="muted"):
+    """创建可换行的纯文本标签，避免外部文本被 Qt 解释为富文本。"""
     widget = QLabel(text)
     widget.setTextFormat(Qt.TextFormat.PlainText)
     widget.setObjectName(name)
@@ -66,6 +68,7 @@ def label(text, name="muted"):
 
 
 def button(text, action, primary=False):
+    """把按钮绑定到回调，primary 对应样式表中的主要操作按钮。"""
     widget = QPushButton(text)
     widget.clicked.connect(action)
     if primary:
@@ -74,6 +77,8 @@ def button(text, action, primary=False):
 
 
 class Job(QThread):
+    """在后台运行一个任务。用 progress 通知进度，界面收到 finished 后取 result 或 error。"""
+
     progress = Signal(int, str)
 
     def __init__(self, task, parent):
@@ -88,11 +93,14 @@ class Job(QThread):
         except Exception as error:
             self.error = error
         finally:
+            # 任务闭包可能引用整批会话和密钥，线程结束即可释放这份引用。
             self.task = None
 
 
 @dataclass(frozen=True)
 class Connection:
+    """记录本次已验证的平台、模型和接续工具。repr=False 避免打印配置时显示密钥。"""
+
     platform: str
     key: str = field(repr=False)
     harness: str
@@ -100,6 +108,8 @@ class Connection:
 
 
 class Settings(QDialog):
+    """在使用会话正文前检测密钥。通过后将实际可用的连接配置交给主窗口。"""
+
     def __init__(self, parent, config=None):
         super().__init__(parent)
         self.setWindowTitle("配置模型与接续工具")
@@ -143,6 +153,7 @@ class Settings(QDialog):
         layout.addLayout(actions)
 
     def platform_changed(self, name):
+        # 切换平台时清空输入，防止把上一个平台的密钥发往新的服务地址。
         self.key.clear()
         self.update_model(name)
 
@@ -156,6 +167,7 @@ class Settings(QDialog):
         return value if ok and value else None
 
     def unlock(self):
+        """从保险库取回密钥填入表单，模型访问权限仍由后续检测确认。"""
         password = self.password("输入此平台密钥的主密码")
         if password is None:
             return
@@ -174,6 +186,7 @@ class Settings(QDialog):
             self.status.setText("此平台尚未保存密钥。")
 
     def verify(self):
+        """在界面线程收集输入，再在后台检测平台。只有勾选保存才会请求主密码。"""
         key = self.key.text().strip()
         if not key:
             self.status.setText("请先输入 API Key。")
@@ -195,6 +208,7 @@ class Settings(QDialog):
             provider = asyncio.run(validate_key(platform, key))
             saved = True
             if password:
+                # 网络验证和本地保存独立处理，写库失败时密钥仍可在本次运行中使用。
                 try:
                     vault.save(vault.vault_path(), platform, key, password)
                 except (OSError, ValueError, sqlite3.Error):
@@ -208,10 +222,12 @@ class Settings(QDialog):
         self.job.start()
 
     def form_state(self, enabled):
+        # 检测进行中锁定相关输入，避免请求返回时平台或密钥已经改变。
         for widget in (self.platform, self.harness, self.key, self.remember, self.unlock_button, self.verify_button):
             widget.setEnabled(enabled)
 
     def verified(self):
+        """回到界面线程后展示验证结果，验证通过才接受这个对话框。"""
         job, self.job = self.job, None
         job.deleteLater()
         self.form_state(True)
@@ -225,11 +241,14 @@ class Settings(QDialog):
         self.accept()
 
     def reject(self):
+        # 对话框持有线程对象，等检测结束后再允许关闭。
         if self.job is None:
             super().reject()
 
 
 class Window(QMainWindow):
+    """管理导入、预览和导出的顺序。self.job 指向当前读包或压缩任务。"""
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DS Context Hub")
@@ -258,6 +277,7 @@ class Window(QMainWindow):
         self.setCentralWidget(central)
 
     def make_selection_tab(self):
+        """连接搜索、勾选和预览。点中某一行用于预览，勾选才会进入导出批次。"""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(14, 14, 14, 14)
@@ -314,6 +334,7 @@ class Window(QMainWindow):
         self.tabs.addTab(page, "会话")
 
     def make_output_tab(self):
+        """组装输出目录、预计发送的平台信息和每条会话的完成状态。"""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(14, 14, 14, 14)
@@ -348,6 +369,7 @@ class Window(QMainWindow):
         self.tabs.addTab(page, "压缩与导出")
 
     def settings(self):
+        """仅在对话框接受时替换连接配置，并在输出页显示本次实际使用的模型。"""
         dialog = Settings(self, self.config)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.config = dialog.config
@@ -360,6 +382,7 @@ class Window(QMainWindow):
         return False
 
     def open_archive(self):
+        """把读包交给后台任务，期间禁用会与本次导入冲突的操作。"""
         path, _ = QFileDialog.getOpenFileName(self, "打开 DeepSeek 导出文件", "", "ZIP (*.zip)")
         if not path:
             return
@@ -372,6 +395,7 @@ class Window(QMainWindow):
         self.job.start()
 
     def archive_read(self):
+        """成功后才替换已有会话列表，读包失败时仍可继续处理上一份数据。"""
         job, self.job = self.job, None
         job.deleteLater()
         self.import_button.setEnabled(True)
@@ -386,6 +410,7 @@ class Window(QMainWindow):
             self.selection_changed()
             return
         self.sessions, skipped = job.result
+        # 批量填充时暂停列表信号。UserRole 存会话索引，重名标题也能定位到正确正文。
         self.tree.blockSignals(True)
         self.tree.clear()
         for index, session in enumerate(self.sessions):
@@ -407,6 +432,7 @@ class Window(QMainWindow):
             self.settings()
 
     def preview_item(self, item, _previous):
+        """长对话只截取屏幕预览，长度估算和实际压缩使用完整会话。"""
         if item is None:
             self.preview.clear()
             self.preview_title.setText("清洗后预览")
@@ -422,11 +448,13 @@ class Window(QMainWindow):
         return (self.tree.topLevelItem(index) for index in range(self.tree.topLevelItemCount()))
 
     def filter_list(self):
+        # 搜索只影响可见性，临时隐藏的行保留原来的勾选状态。
         query = self.search.text().strip().casefold()
         for item in self.items():
             item.setHidden(query not in item.text(0).casefold())
 
     def check_visible(self, checked):
+        """批量修改当前可见且可用的行，然后统一刷新勾选计数。"""
         self.tree.blockSignals(True)
         for item in self.items():
             if not item.isHidden() and not item.isDisabled():
@@ -435,12 +463,14 @@ class Window(QMainWindow):
         self.selection_changed()
 
     def selection(self):
+        """返回所有已勾选的有效会话，包括被当前搜索条件暂时隐藏的条目。"""
         return [
             self.sessions[item.data(0, Qt.ItemDataRole.UserRole)] for item in self.items()
             if item.checkState(0) == Qt.CheckState.Checked and not item.isDisabled()
         ]
 
     def selection_changed(self, *_args):
+        # 这里只判断勾选与忙碌状态，模型设置和输出目录允许在开始时再补齐。
         count = len(self.selection())
         self.selection_label.setText(f"已勾选 {count} 条")
         self.start_button.setEnabled(self.job is None and count > 0)
@@ -453,6 +483,7 @@ class Window(QMainWindow):
         return bool(self.destination)
 
     def start(self):
+        """确认本次发送的平台和会话数后，才创建批次目录并启动压缩。"""
         selected = self.selection()
         if not selected or self.job:
             return
@@ -477,6 +508,7 @@ class Window(QMainWindow):
         self.progress.setRange(0, len(selected))
         self.progress.setValue(0)
         self.output_status.setText("正在连接模型…")
+        # 后台使用启动时确定的会话、连接和目录，后续界面选择只影响下一批。
         self.job = Job(
             lambda job: asyncio.run(self.process(job, selected, connection, batch)), self,
         )
@@ -487,10 +519,12 @@ class Window(QMainWindow):
 
     @staticmethod
     async def process(job, selected, connection, batch):
+        """一批复用一个客户端。每条成功就写盘，返回成功数、已处理数和批次总数。"""
         successes = 0
         completed = 0
         async with generator(connection.provider, connection.key) as generate:
             async def checked_generate(*args):
+                # 停止是协作式的。请求已发出时等待它返回，再停止后续分段与写盘。
                 if job.isInterruptionRequested():
                     raise asyncio.CancelledError
                 response = await generate(*args)
@@ -509,6 +543,7 @@ class Window(QMainWindow):
                 except asyncio.CancelledError:
                     break
                 except OSError:
+                    # 记录单条失败并继续处理其他会话，已完成的输出仍在批次目录中。
                     job.progress.emit(index, f"失败 · {session.title} · 无法写入导出文件")
                 except Exception as error:
                     job.progress.emit(index, f"失败 · {session.title} · {error_message(error)}")
@@ -519,6 +554,7 @@ class Window(QMainWindow):
         return successes, completed, len(selected)
 
     def update_progress(self, index, message):
+        """负索引表示分段处理中的文字提示，非负索引表示一条会话已有最终结果。"""
         if index < 0:
             if self.job and not self.job.isInterruptionRequested():
                 self.output_status.setText(message)
@@ -542,6 +578,7 @@ class Window(QMainWindow):
             self.output_status.setText("正在停止，将等待当前请求返回。")
 
     def export_finished(self):
+        """按任务返回的计数区分失败与未处理，停止后仍能打开已有的批次结果。"""
         job, self.job = self.job, None
         job.deleteLater()
         self.set_busy(False)
@@ -558,6 +595,7 @@ class Window(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.batch)))
 
     def closeEvent(self, event):
+        # 窗口拥有线程对象。压缩时请求停止，读包时等待完成，等线程结束后才允许关闭。
         if self.job:
             if self.cancel_button.isEnabled():
                 self.stop_batch()
@@ -567,6 +605,7 @@ class Window(QMainWindow):
 
 
 def main():
+    """建立 Qt 应用，显示主窗口并进入事件循环。两个启动入口都调用这里。"""
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setFont(QFont("Microsoft YaHei UI", 10))

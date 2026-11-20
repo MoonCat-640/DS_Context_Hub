@@ -1,4 +1,4 @@
-"""Read DeepSeek v3 exports without extracting archive members."""
+"""按 DeepSeek v3 导出包的索引读取会话，在内存中还原当前对话并清洗文本。"""
 
 import json
 import re
@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from zipfile import BadZipFile, ZipFile
 
+# 按单个 JSON 的解压后大小限制内存占用，索引和会话正文都经过这项检查。
 MAX_JSON_BYTES = 64 * 1024 * 1024
+# 先识别 Markdown 代码围栏，保留其中的缩进、换行和可能恰好与客套话相同的代码。
 FENCE = re.compile(
     r"(?ms)^[ \t]*(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)\n"
     r"(?P<body>.*?)(?:^[ \t]*(?P=fence)[ \t]*(?=\n|\Z)|\Z)"
@@ -26,12 +28,15 @@ OPENING = re.compile(r"^(?:好的|当然可以|没问题|您好|你好|不客气
 
 @dataclass(frozen=True)
 class Conversation:
+    """供预览和压缩共用的会话。turns 统计清洗后有正文的消息条数。"""
+
     title: str
     text: str
     turns: int
 
 
 def _is_tool_payload(body: str) -> bool:
+    """识别工具调用 JSON。数组中每一项都符合调用格式时才丢弃整个代码块。"""
     try:
         value = json.loads(body)
     except ValueError:
@@ -49,11 +54,13 @@ def _is_tool_payload(body: str) -> bool:
 
 
 def clean_text(text: str) -> str:
+    """清理正文中的寒暄和多余空行，保留普通代码块及用户给出的 JSON 示例。"""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
     def prose(part: str) -> str:
         lines = []
         for line in part.split("\n"):
+            # Markdown 也允许用四个空格或制表符标记代码。
             if line.startswith(("    ", "\t")):
                 lines.append(line)
                 continue
@@ -66,6 +73,7 @@ def clean_text(text: str) -> str:
     start = 0
     for match in FENCE.finditer(text):
         pieces.append(prose(text[start:match.start()]))
+        # tool 等标签已表明用途，通用的 json 标签还需检查内容。
         if match["info"].strip().lower() not in {"json", "tool", "tool_call", "function_call"}:
             pieces.append(match[0])
         elif match["info"].strip().lower() == "json" and not _is_tool_payload(match["body"]):
@@ -76,11 +84,13 @@ def clean_text(text: str) -> str:
 
 
 def _conversation(data: dict, title: str) -> Conversation:
+    """从当前消息沿 parent_id 回溯，再翻转为用户在网页上看到的时间顺序。"""
     messages = {message["id"]: message for message in data["messages"]}
     current = data["current_message_id"]
     seen = set()
     turns = []
     while current is not None:
+        # 重新生成回答会产生分支。父节点缺失或成环时，无法可靠地还原这一条对话。
         if current in seen or current not in messages:
             raise ValueError("消息分支不完整或包含循环")
         seen.add(current)
@@ -91,6 +101,7 @@ def _conversation(data: dict, title: str) -> Conversation:
             continue
         fragments = []
         for fragment in message.get("fragments", []):
+            # 只取问答正文。附件留下提示，思考过程、模板应答等其他片段跳过。
             kind, content = fragment.get("type"), fragment.get("content")
             if kind in {"REQUEST", "RESPONSE"} and isinstance(content, str):
                 fragments.append(content)
@@ -103,16 +114,19 @@ def _conversation(data: dict, title: str) -> Conversation:
 
 
 def read_archive(path: Path) -> tuple[list[Conversation], int]:
+    """按索引顺序返回会话及跳过条数。索引损坏会中止导入，单条会话损坏只计入跳过条数。"""
     with ZipFile(path) as archive:
         members = {}
         for info in archive.infolist():
             name = PurePosixPath(info.filename.replace("\\", "/"))
+            # 只查看成员名。账户文件在此排除，其内容不会被读取或解压到磁盘。
             if info.is_dir() or name.name.casefold() == "user.json" or name.suffix != ".json":
                 continue
             members.setdefault(name, []).append(info)
 
         def read(name):
             matches = members.get(name, [])
+            # ZIP 允许同名成员，不能让读取顺序决定到底采用哪一份数据。
             if len(matches) != 1 or matches[0].file_size > MAX_JSON_BYTES:
                 raise ValueError("JSON 缺失、重复或过大")
             return json.loads(archive.read(matches[0]))
@@ -126,11 +140,13 @@ def read_archive(path: Path) -> tuple[list[Conversation], int]:
             raise ValueError("会话索引格式不受支持")
         candidates = {}
         for name in members:
+            # 兼容会话位于索引同级或下一层目录的导出布局，根目录由索引位置决定。
             if name.parent == root or name.parent.parent == root:
                 candidates.setdefault(name.stem, []).append(name)
 
         conversations = []
         skipped = 0
+        # 先统计重复的会话 ID，重复项都跳过，避免标题与其他会话的正文错配。
         ids = Counter(entry.get("id") for entry in index if isinstance(entry, dict)
                       and isinstance(entry.get("id"), str))
         for entry in index:
