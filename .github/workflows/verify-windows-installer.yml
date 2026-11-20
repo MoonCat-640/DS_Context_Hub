@@ -1,16 +1,24 @@
 name: Verify Windows installer
-run-name: Verify Windows installer ${{ inputs.tag }}
+run-name: Verify Windows installer ${{ inputs.source }} ${{ inputs.tag }}
 
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: Release tag containing Setup.exe
+      source:
+        description: Build from the checked-out source or verify a published release
         required: true
+        type: choice
+        default: release
+        options:
+          - release
+          - build
+      tag:
+        description: Published release tag (release mode)
+        required: false
         type: string
       sha256:
-        description: Expected SHA-256 of Setup.exe
-        required: true
+        description: Expected SHA-256 of Setup.exe (release mode)
+        required: false
         type: string
 
 permissions:
@@ -19,13 +27,31 @@ permissions:
 jobs:
   install:
     runs-on: windows-2022
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
 
+      - name: Build the standalone application and installer
+        if: inputs.source == 'build'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path build/tools -Force | Out-Null
+          curl.exe --fail --location --retry 3 --max-time 120 --output build/tools/nsis.zip 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download the NSIS compiler' }
+          if ((Get-FileHash build/tools/nsis.zip).Hash -ne 'BA63DFFC4410EE89193E1CB5A41989991BD77C61068DA17E3156D136B7B0B3D8') { throw 'Unexpected compiler digest' }
+          Expand-Archive -LiteralPath build/tools/nsis.zip -DestinationPath build/tools
+          py -3.13 -m venv .build-venv
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create the Python 3.13 build environment' }
+          .\.build-venv\Scripts\python.exe -m pip install --disable-pip-version-check -r packaging/requirements-windows.lock
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the locked Python dependencies' }
+          .\.build-venv\Scripts\python.exe packaging/build_windows.py --nsis build/tools/nsis-3.13/makensis.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
+
       - name: Download and verify the release installer
+        if: inputs.source == 'release'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,10 +71,23 @@ jobs:
         shell: pwsh
         run: .\packaging\verify_install.ps1
 
+      - name: Retain tested release files
+        if: success() && inputs.source == 'build'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-release
+          path: release/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
       - name: Show installation and application test results
         if: always()
         shell: pwsh
         run: |
+          if (Test-Path -LiteralPath 'build\windows\frozen-self-test.json') {
+            Get-Content -Raw -LiteralPath 'build\windows\frozen-self-test.json'
+          }
           if (Test-Path -LiteralPath 'build\install-verification') {
             Get-ChildItem -LiteralPath 'build\install-verification' -Filter '*.json' -File | ForEach-Object {
               Write-Host $_.Name

@@ -78,7 +78,17 @@ Var OriginalUninstallDir
 Var InitialDir
 
 Function ValidateDirectory
-  GetFullPathName $INSTDIR "$INSTDIR"
+  ; NSIS GetFullPathName requires an existing directory. The Win32 API also
+  ; normalizes a path the user is about to create.
+  Push "$INSTDIR"
+  System::Call 'kernel32::GetFullPathNameW(w s, i ${NSIS_MAX_STRLEN}, w .r1, p 0)i.r0'
+  ${If} $0 == 0
+  ${OrIf} $0 >= ${NSIS_MAX_STRLEN}
+    MessageBox MB_OK|MB_ICONSTOP "$(InvalidDirectory)" /SD IDOK
+    SetErrorLevel 1
+    Abort
+  ${EndIf}
+  StrCpy $INSTDIR "$1"
   ${GetRoot} "$INSTDIR" $0
   ${If} $INSTDIR == $0
   ${OrIf} $INSTDIR == "$0\"
