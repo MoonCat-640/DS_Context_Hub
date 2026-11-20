@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $testRoot = Join-Path $projectRoot 'build\install-verification'
 $setupPath = (Resolve-Path -LiteralPath $Setup).Path
+$expectedIconHash = (Get-FileHash -LiteralPath (Join-Path $projectRoot 'assets\ds-context-hub.ico')).Hash
 $appKey = 'Software\MoonCat-640\DS Context Hub'
 $uninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\DSContextHub'
 $results = [Collections.Generic.List[object]]::new()
@@ -26,7 +27,14 @@ function Test-InstalledShortcut([string]$Link, [string]$Application, [string]$Re
     if (-not (Test-Path -LiteralPath $Link -PathType Leaf)) { throw "Missing shortcut: $Link" }
     $shell = New-Object -ComObject Shell.Application
     $folder = $shell.NameSpace([IO.Path]::GetDirectoryName($Link))
-    $target = $folder.ParseName([IO.Path]::GetFileName($Link)).GetLink.Path
+    $shortcut = $folder.ParseName([IO.Path]::GetFileName($Link)).GetLink
+    $target = $shortcut.Path
+    # 用 Windows Shell 读取快捷方式真正使用的图标。散列比较也适用于系统返回短路径的情况。
+    $iconPath = ''
+    $iconIndex = $shortcut.GetIconLocation([ref]$iconPath)
+    $iconPath = [Environment]::ExpandEnvironmentVariables($iconPath)
+    if ($iconIndex -ne 0 -or -not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw "Missing shortcut icon: $Link ($iconPath)" }
+    if ((Get-FileHash -LiteralPath $iconPath).Hash -ne $expectedIconHash) { throw "Incorrect shortcut icon: $Link ($iconPath)" }
     Write-Host "Launching $Link (shell target: $target)"
     Start-Process -FilePath $Link -ArgumentList "--self-test `"$Report`"" -WindowStyle Hidden
     for ($attempt = 0; $attempt -lt 120 -and -not (Test-Path -LiteralPath $Report); $attempt++) {

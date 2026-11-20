@@ -8,6 +8,7 @@ ManifestDPIAware true
 !include "Sections.nsh"
 
 !define APP_NAME "DS Context Hub"
+!define INSTALLED_APP_ICON "$INSTDIR\_internal\assets\ds-context-hub.ico"
 !define APP_KEY "Software\MoonCat-640\DS Context Hub"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\DSContextHub"
 ; Admin 决定 UAC 提权。用户随后选择的安装范围决定 SHCTX 指向 HKCU 还是 HKLM。
@@ -33,6 +34,9 @@ VIAddVersionKey /LANG=1033 "FileDescription" "DS Context Hub Offline Setup"
 VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright (c) 2026 MoonCat-640"
 
+; 向导、安装器和卸载器共用蓝鲸图标。桌面快捷方式显式引用安装后的同一 ICO。
+!define MUI_ICON "${PROJECT_ROOT}\assets\ds-context-hub.ico"
+!define MUI_UNICON "${MUI_ICON}"
 !define MUI_ABORTWARNING
 !define MUI_LANGDLL_ALLLANGUAGES
 !define MUI_LANGDLL_REGISTRY_ROOT "SHCTX"
@@ -182,13 +186,13 @@ Section "$(CoreSection)" Core
   ; 上一条 File 指令可能位于某个子目录。复位后，快捷方式的工作目录就是程序根目录。
   SetOutPath "$INSTDIR"
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
-  CreateShortcut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\ds_context_hub.exe"
+  CreateShortcut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\ds_context_hub.exe" "" "${INSTALLED_APP_ICON}" 0
   CreateShortcut "$SMPROGRAMS\${APP_NAME}\Uninstall.lnk" "$INSTDIR\Uninstall.exe" "/$MultiUser.InstallMode"
 SectionEnd
 
 Section "$(DesktopSection)" Desktop
   ; 记录此选项，卸载时据此决定是否清理桌面快捷方式。
-  CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\ds_context_hub.exe"
+  CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\ds_context_hub.exe" "" "${INSTALLED_APP_ICON}" 0
   WriteRegDWORD SHCTX "${APP_KEY}" "DesktopShortcut" 1
 SectionEnd
 

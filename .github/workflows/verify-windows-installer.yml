@@ -33,6 +33,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          # 核验已发布版本时使用该 tag 的图标和测试脚本。
+          ref: ${{ inputs.source == 'release' && inputs.tag || github.sha }}
           persist-credentials: false
 
       - name: Build the standalone application and installer

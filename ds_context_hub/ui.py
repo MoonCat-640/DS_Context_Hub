@@ -9,7 +9,7 @@ from zipfile import BadZipFile
 
 from cryptography.exceptions import InvalidTag
 from PySide6.QtCore import Qt, QThread, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QFont
+from PySide6.QtGui import QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHeaderView,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QMainWindow,
@@ -604,12 +604,21 @@ class Window(QMainWindow):
             super().closeEvent(event)
 
 
-def main():
-    """建立 Qt 应用，显示主窗口并进入事件循环。两个启动入口都调用这里。"""
-    app = QApplication(sys.argv)
+def create_application(argv):
+    """正常启动和发行自检共用同一套字体、样式和窗口图标。"""
+    app = QApplication(argv)
     app.setStyle("Fusion")
     app.setFont(QFont("Microsoft YaHei UI", 10))
     app.setStyleSheet(STYLE)
+    # 源码从仓库的 assets 读取，PyInstaller 在 _internal 下保留同样的相对位置。
+    icon_path = Path(__file__).resolve().parents[1] / "assets" / "ds-context-hub.ico"
+    app.setWindowIcon(QIcon(str(icon_path)))
+    return app
+
+
+def main():
+    """显示主窗口并进入事件循环。源码入口与 Windows 可执行文件都调用这里。"""
+    app = create_application(sys.argv)
     window = Window()
     window.show()
     sys.exit(app.exec())

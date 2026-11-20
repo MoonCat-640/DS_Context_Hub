@@ -13,22 +13,27 @@ def run(report: Path) -> int:
     """将各项结果和实际启动的 exe 路径写为 JSON，并通过退出码向调用者报告成败。"""
     results = {"frozen": bool(getattr(sys, "frozen", False)), "executable": str(Path(sys.executable).resolve()), "checks": []}
     try:
-        from PySide6.QtCore import Qt
-        from PySide6.QtGui import QFont, QFontMetrics
-        from PySide6.QtWidgets import QApplication, QTreeWidgetItem
+        from PySide6.QtCore import QSize, Qt
+        from PySide6.QtGui import QFontMetrics
+        from PySide6.QtWidgets import QTreeWidgetItem
         from cryptography.exceptions import InvalidTag
         from ds_context_hub import vault
         from ds_context_hub.archive import read_archive
         from ds_context_hub.export import MEMORY_FILES, new_batch, write_bundle
         from ds_context_hub.providers import PROVIDERS, compact, generator
-        from ds_context_hub.ui import STYLE, Window
+        from ds_context_hub.ui import Window, create_application
 
-        app = QApplication([])
-        app.setStyle("Fusion")
-        app.setStyleSheet(STYLE)
-        app.setFont(QFont("Microsoft YaHei UI", 10))
+        app = create_application([])
         assert QFontMetrics(app.font()).inFont("中")
         window = Window()
+        # 从窗口实际继承的图标读取小、中、大三档，覆盖漏打包 ICO 或 Qt 图标插件的问题。
+        icon = window.windowIcon()
+        sizes = {size.width() for size in icon.availableSizes()}
+        assert {16, 48, 256} <= sizes
+        for size in (16, 48, 256):
+            pixmap = icon.pixmap(QSize(size, size), 1.0)
+            assert not pixmap.isNull() and pixmap.width() == size
+        results["checks"].append("application window icon at 16, 48 and 256 px")
         with tempfile.TemporaryDirectory(prefix="ds-hub-self-test-") as temporary:
             root = Path(temporary)
             archive = root / "fixture.zip"
