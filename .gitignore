@@ -9,9 +9,11 @@ config.json
 .env
 .env.*
 .venv/
+.build-venv/
 __pycache__/
 .ruff_cache/
 dist/
 build/
+release/
 *.egg-info/
 ds-context-*/

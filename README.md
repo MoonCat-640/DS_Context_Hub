@@ -4,6 +4,19 @@
 
 ## 安装与启动
 
+Windows 10/11 x64 用户可从 [GitHub Releases](https://github.com/MoonCat-640/DS_Context_Hub/releases) 下载离线安装包 `Setup.exe`。
+
+1. 双击 `Setup.exe`，在 Windows UAC 提示中允许安装器运行。
+2. 选择简体中文或 English，阅读许可证，并选择为当前用户或全体用户安装。
+3. 选择安装目录，可选创建桌面快捷方式、添加安装目录到 PATH。
+4. 安装结束后，通过桌面或开始菜单中的「DS Context Hub」启动软件。快捷方式指向 `ds_context_hub.exe`。
+
+安装包内置 Python、Qt、加密库与模型 SDK，安装过程可离线完成。压缩会话时需要联网访问所选模型平台。卸载可通过 Windows「已安装的应用」或开始菜单完成，本地密钥保险库保留在用户目录中。
+
+Release 同时提供便携版 ZIP。解压整个文件夹后双击 `ds_context_hub.exe` 即可运行，移动时需保留同目录的 `_internal` 文件夹。`SHA256SUMS.txt` 提供下载文件的校验和。当前发行包未进行代码签名。
+
+### 从源码运行
+
 在仓库根目录打开 PowerShell。使用 64 位 Python 3.11 或更新版本。
 
 ```powershell
@@ -11,6 +24,8 @@ py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m ds_context_hub
 ```
+
+Windows 构建步骤见 [打包说明](packaging/README.md)。
 
 ## 使用
 
