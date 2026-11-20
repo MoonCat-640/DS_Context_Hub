@@ -10,7 +10,7 @@ from zipfile import ZipFile
 
 
 def run(report: Path) -> int:
-    results = {"frozen": bool(getattr(sys, "frozen", False)), "checks": []}
+    results = {"frozen": bool(getattr(sys, "frozen", False)), "executable": str(Path(sys.executable).resolve()), "checks": []}
     try:
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QFont, QFontMetrics
