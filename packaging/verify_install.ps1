@@ -107,7 +107,12 @@ try {
         Test-InstalledShortcut $startLink $application (Join-Path $testRoot "$scope-start-self-test.json")
         Test-InstalledShortcut $desktopLink $application (Join-Path $testRoot "$scope-desktop-self-test.json")
         if ((Get-StoredPath $environmentKey) -cne $beforePath) { throw 'The default installation changed PATH' }
+        # 给测试创建的桌面链接换上系统图标，确认覆盖安装会将旧快捷方式更新为蓝鲸。
+        $legacyLink = (New-Object -ComObject WScript.Shell).CreateShortcut($desktopLink)
+        $legacyLink.IconLocation = (Join-Path $env:WINDIR 'System32\shell32.dll') + ',0'
+        $legacyLink.Save()
         Invoke-CheckedProcess $setupPath "/S /$scope /AddToPath /D=$directory"
+        Test-InstalledShortcut $desktopLink $application (Join-Path $testRoot "$scope-reinstalled-desktop-self-test.json")
         $duringPath = Get-StoredPath $environmentKey
         if (($duringPath -split ';') -notcontains $directory) { throw 'Missing optional PATH entry' }
         # 再用同一选项重装，PATH 内容应与第一次添加后完全相同。

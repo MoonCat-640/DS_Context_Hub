@@ -11,8 +11,11 @@ import sys
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 ROOT = Path(__file__).resolve().parent.parent
+ICON = ROOT / "assets" / "ds-context-hub.ico"
+MASTER = ROOT / "assets" / "ds-context-hub.png"
+HANDOVER = ROOT / "docs" / "HANDOVER.md"
 # BUILD 存放中间产物，BUNDLE 是可以直接运行的完整目录，RELEASE 存放供下载的文件。
 BUILD = ROOT / "build" / "windows"
 BUNDLE = ROOT / "dist" / "ds_context_hub"
@@ -88,6 +91,19 @@ def generate_payload():
     return sum(path.stat().st_size for path in files) // 1024 + 1
 
 
+def verify_native_icons(*executables):
+    """逐帧核对 Windows 原生资源，防止资源管理器显示 PyInstaller 或 NSIS 的默认图标。"""
+    from PyInstaller.utils.win32.icon import RT_GROUP_ICON, RT_ICON, IconFile
+    from PyInstaller.utils.win32.winresource import get_resources
+
+    expected = set(IconFile(str(ICON)).images)
+    for exe in executables:
+        icons = get_resources(str(exe), types=[RT_ICON, RT_GROUP_ICON])
+        frames = {frame for languages in icons.get(RT_ICON, {}).values() for frame in languages.values()}
+        if not icons.get(RT_GROUP_ICON) or frames != expected:
+            raise RuntimeError(f"{exe.name} 内嵌的图标与 {ICON.name} 不一致")
+
+
 def main():
     """解析构建参数，完成冻结、自检、安装器编译和发行文件校验。"""
     parser = argparse.ArgumentParser()
@@ -109,9 +125,14 @@ def main():
         os.environ["PYINSTALLER_CONFIG_DIR"] = str(BUILD / "cache")
         run(sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", ROOT / "packaging" / "ds_context_hub.spec")
     shutil.copyfile(ROOT / "LICENSE", BUNDLE / "LICENSE.txt")
-    shutil.copyfile(ROOT / "README.md", BUNDLE / "README.md")
+    # 按仓库结构保留 README 的相对链接，便携版和安装版都能离线查看交接文档和图标原稿。
+    for source in (ROOT / "README.md", ROOT / "packaging" / "README.md", MASTER, HANDOVER):
+        destination = BUNDLE / source.relative_to(ROOT)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
     add_notices()
     report = BUILD / "frozen-self-test.json"
+    report.unlink(missing_ok=True)
     # 用精简的子进程环境运行真正的 exe，防止开发机上的 Python 或 Qt 插件掩盖漏打包的问题。
     environment = os.environ.copy()
     for name in ("PYTHONHOME", "PYTHONPATH", "QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH", "QT_QPA_PLATFORM"):
@@ -128,15 +149,21 @@ def main():
     run(args.nsis.resolve(), "/V3", "/INPUTCHARSET", "UTF8", f"/DVERSION={VERSION}", f"/DPROJECT_ROOT={ROOT}",
         f"/DGENERATED_DIR={BUILD}", f"/DOUTPUT_DIR={RELEASE}", f"/DINSTALLED_KB={size}",
         ROOT / "packaging" / "installer.nsi")
+    verify_native_icons(BUNDLE / "ds_context_hub.exe", RELEASE / "Setup.exe")
     portable = RELEASE / f"DS_Context_Hub-{VERSION}-windows-x64.zip"
     # ZIP 保留顶层 ds_context_hub 及其内部层级，解压后 exe 才能找到旁边的 _internal。
     with ZipFile(portable, "w", ZIP_DEFLATED) as zipped:
         for path in sorted(BUNDLE.rglob("*")):
             if path.is_file():
                 zipped.write(path, path.relative_to(BUNDLE.parent))
+    assets = [RELEASE / "Setup.exe", portable]
+    # 图标和交接文档也作为独立附件发布，便于直接下载或核对。
+    for source in (MASTER, ICON, HANDOVER):
+        exported = RELEASE / source.name
+        shutil.copyfile(source, exported)
+        assets.append(exported)
     checksums = []
-    # 对最终供下载的两个文件逐一计算散列，改名不会改变对应的 SHA-256。
-    for path in (RELEASE / "Setup.exe", portable):
+    for path in assets:
         with path.open("rb") as artifact:
             checksum = hashlib.file_digest(artifact, "sha256").hexdigest()
         checksums.append(f"{checksum}  {path.name}")

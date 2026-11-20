@@ -17,10 +17,12 @@ py -3.13 -m venv .build-venv
 | 文件 | 用途 |
 | --- | --- |
 | `Setup.exe` | 内置全部依赖的离线安装包 |
-| `DS_Context_Hub-0.1.1-windows-x64.zip` | 解压即可运行的便携版 |
-| `SHA256SUMS.txt` | 两个发行文件的 SHA-256 校验和 |
+| `DS_Context_Hub-0.1.2-windows-x64.zip` | 解压即可运行的便携版 |
+| `ds-context-hub.png`、`ds-context-hub.ico` | 透明高清图标和 Windows 多尺寸图标 |
+| `HANDOVER.md` | 中文开发交接文档 |
+| `SHA256SUMS.txt` | 上述五个文件的 SHA-256 校验和 |
 
-`dist/ds_context_hub/ds_context_hub.exe` 是独立运行入口。同目录的 `_internal` 包含运行时支持文件。构建器只将该应用目录加入安装包及便携 ZIP。
+`dist/ds_context_hub/ds_context_hub.exe` 是独立运行入口。同目录的 `_internal` 包含运行时支持文件。构建器只将该应用目录加入安装包及便携 ZIP。图标源文件、生成命令和各入口的使用方式见交接文档。[开发交接](../docs/HANDOVER.md)
 
 ## 安装行为
 
@@ -32,8 +34,8 @@ py -3.13 -m venv .build-venv
 
 ## 验证与发布
 
-打包后的 `--self-test <报告路径>` 使用合成会话验证 Qt 显示、消息分支、四种导出、所有平台 SDK 客户端初始化、分段摘要、SQLite 和加密。它在清除 Python 和 Qt 环境变量、从 PATH 移除开发工具后运行。结果写入 `build/windows/frozen-self-test.json`。
+打包后的 `--self-test <报告路径>` 使用合成会话验证 Qt 显示、窗口图标、消息分支、四种导出、所有平台 SDK 客户端初始化、分段摘要、SQLite 和加密。它在清除 Python 和 Qt 环境变量、从 PATH 移除开发工具后运行。结果写入 `build/windows/frozen-self-test.json`。构建脚本还会逐帧核对程序和安装器内嵌的 Windows 图标。
 
-`Verify Windows installer` 工作流可从源码构建，也可按发行标签和 SHA-256 下载已有安装包。它在全新的 Windows 测试机核验两种安装范围、自选中文路径、从开始菜单快捷方式启动、默认与可选 PATH、重复安装，以及卸载后保留用户文件、恢复 PATH。从源码构建且通过验证的发行文件可从该次工作流下载。也可在干净的 Windows 测试机上以管理员身份运行 `packaging/verify_install.ps1`，加 `-ReviewWizard` 可手动查看向导。真实模型调用需要用户自己的有效 API Key。
+`Verify Windows installer` 工作流可从源码构建，也可按发行标签和 SHA-256 下载已有安装包。它在全新的 Windows 测试机核验两种安装范围、自选中文路径、桌面和开始菜单快捷方式的启动与图标、默认与可选 PATH、重复安装，以及卸载后保留用户文件、恢复 PATH。从源码构建且通过验证的发行文件可从该次工作流下载。也可在干净的 Windows 测试机上以管理员身份运行 `packaging/verify_install.ps1`，加 `-ReviewWizard` 可手动查看向导。真实模型调用需要用户自己的有效 API Key。
 
-将源码提交并推送后，以对应提交创建版本标签和 GitHub Release，上传 `release` 中的三个文件。当前构建不包含代码签名证书。
+将源码提交并推送后，以对应提交创建版本标签和 GitHub Release，上传校验清单和清单中列出的五个文件。当前构建不包含代码签名证书。

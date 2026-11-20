@@ -1,0 +1,4 @@
+# 图标和交接文档同时作为 Release 附件发布，跨平台检出时保持附件字节一致。
+/assets/*.png binary
+/assets/*.ico binary
+/docs/HANDOVER.md text eol=lf

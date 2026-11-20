@@ -1,5 +1,7 @@
 # DS Context Hub
 
+<img src="assets/ds-context-hub.png" alt="DS Context Hub 蓝鲸折页图标" width="96" height="96">
+
 在 Windows 上打开 DeepSeek 网页聊天导出包，预览和选择会话，再调用你自己的模型 API，生成可在其他工具中接续的 Markdown 简报。
 
 ## 安装与启动
@@ -10,6 +12,8 @@ Windows 10/11 x64 用户可从 [GitHub Releases](https://github.com/MoonCat-640/
 2. 选择简体中文或 English，阅读许可证，并选择为当前用户或全体用户安装。
 3. 选择安装目录，可选创建桌面快捷方式、添加安装目录到 PATH。
 4. 安装结束后，通过桌面或开始菜单中的「DS Context Hub」启动软件。快捷方式指向 `ds_context_hub.exe`。
+
+从旧版本更新时，先关闭程序，沿用原安装范围和目录，并勾选「桌面快捷方式」，即可更新桌面上的蓝鲸图标。
 
 安装包内置 Python、Qt、加密库与模型 SDK，安装过程可离线完成。压缩会话时需要联网访问所选模型平台。卸载可通过 Windows「已安装的应用」或开始菜单完成，本地密钥保险库保留在用户目录中。
 
@@ -25,7 +29,7 @@ py -m venv .venv
 .\.venv\Scripts\python.exe -m ds_context_hub
 ```
 
-Windows 构建步骤见 [打包说明](packaging/README.md)。
+开发交接文档说明会话处理流程、代码入口、图标维护和发行验收步骤。[开发交接](docs/HANDOVER.md) · [Windows 打包说明](packaging/README.md)
 
 ## 使用
 
@@ -64,4 +68,4 @@ Windows 构建步骤见 [打包说明](packaging/README.md)。
 - API Key 默认仅保留在当前进程内。用户选择保存时，每个密钥使用独立随机盐和 nonce，通过 PBKDF2-HMAC-SHA256（600,000 次）与 AES-256-GCM 加密，密文存入 `%LOCALAPPDATA%\DS Context Hub\keys.db`。重新使用时需输入对应主密码。
 - 仓库忽略真实聊天 ZIP、数据库与批次输出目录。
 
-源代码采用 [MIT 许可证](LICENSE)。
+源代码采用 MIT 许可证，离线发行版附有 `LICENSE.txt`。[许可证原文](https://github.com/MoonCat-640/DS_Context_Hub/blob/main/LICENSE)
